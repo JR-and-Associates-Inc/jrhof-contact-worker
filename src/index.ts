@@ -11,18 +11,20 @@ const ALLOWED_ORIGINS = [
 	'https://jrhof.org',
 ];
 
+// Basic email sanity (not RFC exhaustive)
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 function buildCorsHeaders(req: Request, origin: string | null): Headers {
 	const hdrs = new Headers();
-	const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : 'https://jrhof.org';
+	const allowed = origin && ALLOWED_ORIGINS.includes(origin)
+		? origin
+		: 'https://jrhof.org'; // fallback to prod; change to pages.dev if you prefer
 	hdrs.set('Access-Control-Allow-Origin', allowed);
 	hdrs.set('Vary', 'Origin');
 	hdrs.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
 
-	// Reflect what the browser asked for, default to Content-Type
 	const reqHeaders = req.headers.get('Access-Control-Request-Headers');
 	hdrs.set('Access-Control-Allow-Headers', reqHeaders || 'Content-Type');
-
-	// Cache preflight for a day
 	hdrs.set('Access-Control-Max-Age', '86400');
 	return hdrs;
 }
@@ -37,8 +39,12 @@ function esc(str: unknown): string {
 function parseBCC(csv?: string): string[] {
 	return (csv || '')
 		.split(',')
-		.map(s => s.trim())
+		.map((s) => s.trim())
 		.filter(Boolean);
+}
+
+function missingEnv(name: string): never {
+	throw new Error(`Missing required env var: ${name}`);
 }
 
 export default {
@@ -55,29 +61,43 @@ export default {
 			return new Response('Method Not Allowed', { status: 405, headers: corsHeaders });
 		}
 
+		// --- Required env vars ---
+		const FROM_ADDRESS = env.FROM_ADDRESS?.trim() || missingEnv('FROM_ADDRESS');
+		const PRIMARY_RECIPIENT = env.PRIMARY_RECIPIENT?.trim() || missingEnv('PRIMARY_RECIPIENT');
+		const RESEND_KEY = env.RESEND_API_KEY?.trim() || missingEnv('RESEND_API_KEY');
+		const BCC_LIST = parseBCC(env.BCC_RECIPIENTS);
+
+		// --- Parse JSON ---
 		let body: any;
 		try {
 			body = await request.json();
 		} catch {
-			return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
+			return new Response(JSON.stringify({ error: 'Invalid JSON', code: 'invalid_json' }), {
 				status: 400,
 				headers: { ...Object.fromEntries(corsHeaders), 'Content-Type': 'application/json' },
 			});
 		}
 
-		const name = (body?.name ?? '').trim();
-		const email = (body?.email ?? '').trim();
-		const message = (body?.message ?? '').trim();
+		const name = (body?.name ?? '').toString().trim();
+		const email = (body?.email ?? '').toString().trim();
+		const message = (body?.message ?? '').toString().trim();
 
 		if (!name || !email || !message) {
-			return new Response(JSON.stringify({ error: 'Missing name, email, or message' }), {
+			return new Response(JSON.stringify({ error: 'Missing name, email, or message', code: 'missing_fields' }), {
+				status: 400,
+				headers: { ...Object.fromEntries(corsHeaders), 'Content-Type': 'application/json' },
+			});
+		}
+
+		if (!EMAIL_RE.test(email)) {
+			return new Response(JSON.stringify({ error: 'Invalid email address', code: 'invalid_email' }), {
 				status: 400,
 				headers: { ...Object.fromEntries(corsHeaders), 'Content-Type': 'application/json' },
 			});
 		}
 
 		if (message.length > 5000) {
-			return new Response(JSON.stringify({ error: 'Message too long' }), {
+			return new Response(JSON.stringify({ error: 'Message too long', code: 'too_long' }), {
 				status: 413,
 				headers: { ...Object.fromEntries(corsHeaders), 'Content-Type': 'application/json' },
 			});
@@ -92,11 +112,11 @@ export default {
     `;
 
 		const payload = {
-			from: env.FROM_ADDRESS,
-			to: env.PRIMARY_RECIPIENT,
-			bcc: parseBCC(env.BCC_RECIPIENTS),
+			from: FROM_ADDRESS,           // must be verified by Resend
+			to: PRIMARY_RECIPIENT,
+			bcc: BCC_LIST,
 			reply_to: email,
-			subject: `📬 New JRHOF Contact Form Submission from ${name}`,
+			subject: `⚾️ New JRHOF Contact Form Submission from ${name}`,
 			html,
 		};
 
@@ -104,7 +124,7 @@ export default {
 			const resp = await fetch('https://api.resend.com/emails', {
 				method: 'POST',
 				headers: {
-					Authorization: `Bearer ${env.RESEND_API_KEY}`,
+					Authorization: `Bearer ${RESEND_KEY}`,
 					'Content-Type': 'application/json',
 				},
 				body: JSON.stringify(payload),
@@ -113,7 +133,7 @@ export default {
 			if (!resp.ok) {
 				const txt = await resp.text();
 				console.error('Resend API error:', resp.status, txt);
-				return new Response(JSON.stringify({ error: 'Failed to send message' }), {
+				return new Response(JSON.stringify({ error: 'Failed to send message', code: 'resend_error' }), {
 					status: 500,
 					headers: { ...Object.fromEntries(corsHeaders), 'Content-Type': 'application/json' },
 				});
@@ -123,10 +143,9 @@ export default {
 				status: 200,
 				headers: { ...Object.fromEntries(corsHeaders), 'Content-Type': 'application/json' },
 			});
-
 		} catch (err) {
 			console.error('Resend fetch error:', err);
-			return new Response(JSON.stringify({ error: 'Internal Error' }), {
+			return new Response(JSON.stringify({ error: 'Internal Error', code: 'internal_error' }), {
 				status: 500,
 				headers: { ...Object.fromEntries(corsHeaders), 'Content-Type': 'application/json' },
 			});
