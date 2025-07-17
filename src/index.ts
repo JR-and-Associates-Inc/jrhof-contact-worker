@@ -18,6 +18,23 @@ interface Env {
 	BCC_RECIPIENTS?: string;
 }
 
+// allowlist: add prod when live
+const ALLOWED_ORIGINS = [
+	'https://jrhof-webapp.pages.dev',
+	'https://www.jrhof.org',
+	'https://jrhof.org',
+];
+
+function getCorsHeaders(origin: string | null) {
+	const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : 'https://jrhof-webapp.pages.dev';
+	return {
+		'Access-Control-Allow-Origin': allowed,
+		'Vary': 'Origin',
+		'Access-Control-Allow-Methods': 'POST, OPTIONS',
+		'Access-Control-Allow-Headers': 'Content-Type',
+	};
+}
+
 // basic html escaping
 function esc(str: unknown): string {
 	return String(str ?? '')
@@ -35,8 +52,16 @@ function parseBCC(csv?: string): string[] {
 
 export default {
 	async fetch(request: Request, env: Env): Promise<Response> {
+		const origin = request.headers.get('Origin');
+		const corsHeaders = getCorsHeaders(origin);
+
+		// ---- Preflight ----
+		if (request.method === 'OPTIONS') {
+			return new Response(null, { status: 204, headers: corsHeaders });
+		}
+
 		if (request.method !== 'POST') {
-			return new Response('Method Not Allowed', { status: 405 });
+			return new Response('Method Not Allowed', { status: 405, headers: corsHeaders });
 		}
 
 		let body: any;
@@ -45,7 +70,7 @@ export default {
 		} catch {
 			return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
 				status: 400,
-				headers: { 'Content-Type': 'application/json' }
+				headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 			});
 		}
 
@@ -56,14 +81,14 @@ export default {
 		if (!name || !email || !message) {
 			return new Response(JSON.stringify({ error: 'Missing name, email, or message' }), {
 				status: 400,
-				headers: { 'Content-Type': 'application/json' }
+				headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 			});
 		}
 
 		if (message.length > 5000) {
 			return new Response(JSON.stringify({ error: 'Message too long' }), {
 				status: 413,
-				headers: { 'Content-Type': 'application/json' }
+				headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 			});
 		}
 
@@ -81,7 +106,7 @@ export default {
 			bcc: parseBCC(env.BCC_RECIPIENTS),
 			reply_to: email,
 			subject: `📬 New JRHOF Contact Form Submission from ${name}`,
-			html
+			html,
 		};
 
 		try {
@@ -89,9 +114,9 @@ export default {
 				method: 'POST',
 				headers: {
 					Authorization: `Bearer ${env.RESEND_API_KEY}`,
-					'Content-Type': 'application/json'
+					'Content-Type': 'application/json',
 				},
-				body: JSON.stringify(payload)
+				body: JSON.stringify(payload),
 			});
 
 			if (!resp.ok) {
@@ -99,7 +124,7 @@ export default {
 				console.error('Resend API error:', resp.status, txt);
 				return new Response(JSON.stringify({ error: 'Failed to send message' }), {
 					status: 500,
-					headers: { 'Content-Type': 'application/json' }
+					headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 				});
 			}
 
@@ -108,15 +133,15 @@ export default {
 
 			return new Response(JSON.stringify({ success: true }), {
 				status: 200,
-				headers: { 'Content-Type': 'application/json' }
+				headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 			});
 
 		} catch (err) {
 			console.error('Resend fetch error:', err);
 			return new Response(JSON.stringify({ error: 'Internal Error' }), {
 				status: 500,
-				headers: { 'Content-Type': 'application/json' }
+				headers: { ...corsHeaders, 'Content-Type': 'application/json' },
 			});
 		}
-	}
+	},
 };
