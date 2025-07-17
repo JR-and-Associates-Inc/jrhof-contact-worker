@@ -1,0 +1,17 @@
+name = "jrhof-contact-worker"
+main = "src/index.ts"
+compatibility_date = "2025-07-17"
+
+# Smart placement for better performance
+[placement]
+mode = "smart"
+
+# Routes (optional: use for custom domains via Cloudflare)
+# routes = [
+#   { pattern = "api.jrhof.org/contact", custom_domain = true }
+# ]
+
+# Observability
+[observability.logs]
+enabled = false
+
