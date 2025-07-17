@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/jrhof-contact-worker.iml" filepath="$PROJECT_DIR$/.idea/jrhof-contact-worker.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../jrhof-webapp/.idea/jrhof-webapp.iml" filepath="$PROJECT_DIR$/../jrhof-webapp/.idea/jrhof-webapp.iml" />
     </modules>
   </component>
 </project>
