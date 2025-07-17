@@ -9,12 +9,13 @@
   "compatibility_date": "2025-07-17",
   "routes": [],
   "observability": {
-    "logs": true
-  },
-  "placement": {
-    "mode": "smart"
+    "enabled": true,
+    "logs": {
+      "enabled": true
+    }
   }
 }
+
 
 /**
  * Smart Placement
