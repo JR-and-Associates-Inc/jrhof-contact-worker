@@ -22,16 +22,16 @@ interface Env {
 const ALLOWED_ORIGINS = [
 	'https://jrhof-webapp.pages.dev',
 	'https://www.jrhof.org',
-	'https://jrhof.org',
+	'https://jrhof.org'
 ];
 
 function getCorsHeaders(origin: string | null) {
-	const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : 'https://jrhof-webapp.pages.dev';
+	const allowedOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
 	return {
-		'Access-Control-Allow-Origin': allowed,
-		'Vary': 'Origin',
+		'Access-Control-Allow-Origin': allowedOrigin,
 		'Access-Control-Allow-Methods': 'POST, OPTIONS',
 		'Access-Control-Allow-Headers': 'Content-Type',
+		'Vary': 'Origin',
 	};
 }
 
@@ -51,13 +51,15 @@ function parseBCC(csv?: string): string[] {
 }
 
 export default {
-	async fetch(request: Request, env: Env): Promise<Response> {
+	async fetch(request: Request, env: Env) {
 		const origin = request.headers.get('Origin');
 		const corsHeaders = getCorsHeaders(origin);
 
-		// ---- Preflight ----
 		if (request.method === 'OPTIONS') {
-			return new Response(null, { status: 204, headers: corsHeaders });
+			return new Response(null, {
+				status: 204,
+				headers: corsHeaders,
+			});
 		}
 
 		if (request.method !== 'POST') {
