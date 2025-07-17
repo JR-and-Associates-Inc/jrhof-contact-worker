@@ -6,9 +6,9 @@ interface Env {
 }
 
 const ALLOWED_ORIGINS = [
-	'https://jrhof-webapp.pages.dev',
-	'https://www.jrhof.org',
 	'https://jrhof.org',
+	'https://www.jrhof.org',
+	'https://jrhof-webapp.pages.dev'
 ];
 
 // Basic email sanity (not RFC exhaustive)
