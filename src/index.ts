@@ -1,16 +1,3 @@
-/**
- * Welcome to Cloudflare Workers! This is your first worker.
- *
- * - Run `npm run dev` in your terminal to start a development server
- * - Open a browser tab at http://localhost:8787/ to see your worker in action
- * - Run `npm run deploy` to publish your worker
- *
- * Bind resources to your worker in `wrangler.toml`. After adding bindings, a type definition for the
- * `Env` object can be regenerated with `npm run cf-typegen`.
- *
- * Learn more at https://developers.cloudflare.com/workers/
- */
-
 interface Env {
 	RESEND_API_KEY: string;
 	PRIMARY_RECIPIENT: string;
@@ -18,24 +5,28 @@ interface Env {
 	BCC_RECIPIENTS?: string;
 }
 
-// allowlist: add prod when live
 const ALLOWED_ORIGINS = [
 	'https://jrhof-webapp.pages.dev',
 	'https://www.jrhof.org',
-	'https://jrhof.org'
+	'https://jrhof.org',
 ];
 
-function getCorsHeaders(origin: string | null) {
-	const allowedOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0];
-	return {
-		'Access-Control-Allow-Origin': allowedOrigin,
-		'Access-Control-Allow-Methods': 'POST, OPTIONS',
-		'Access-Control-Allow-Headers': 'Content-Type',
-		'Vary': 'Origin',
-	};
+function buildCorsHeaders(req: Request, origin: string | null): Headers {
+	const hdrs = new Headers();
+	const allowed = origin && ALLOWED_ORIGINS.includes(origin) ? origin : 'https://jrhof.org';
+	hdrs.set('Access-Control-Allow-Origin', allowed);
+	hdrs.set('Vary', 'Origin');
+	hdrs.set('Access-Control-Allow-Methods', 'POST, OPTIONS');
+
+	// Reflect what the browser asked for, default to Content-Type
+	const reqHeaders = req.headers.get('Access-Control-Request-Headers');
+	hdrs.set('Access-Control-Allow-Headers', reqHeaders || 'Content-Type');
+
+	// Cache preflight for a day
+	hdrs.set('Access-Control-Max-Age', '86400');
+	return hdrs;
 }
 
-// basic html escaping
 function esc(str: unknown): string {
 	return String(str ?? '')
 		.replace(/&/g, '&amp;')
@@ -51,15 +42,13 @@ function parseBCC(csv?: string): string[] {
 }
 
 export default {
-	async fetch(request: Request, env: Env) {
+	async fetch(request: Request, env: Env): Promise<Response> {
 		const origin = request.headers.get('Origin');
-		const corsHeaders = getCorsHeaders(origin);
+		const corsHeaders = buildCorsHeaders(request, origin);
 
+		// --- Preflight ---
 		if (request.method === 'OPTIONS') {
-			return new Response(null, {
-				status: 204,
-				headers: corsHeaders,
-			});
+			return new Response(null, { status: 204, headers: corsHeaders });
 		}
 
 		if (request.method !== 'POST') {
@@ -72,7 +61,7 @@ export default {
 		} catch {
 			return new Response(JSON.stringify({ error: 'Invalid JSON' }), {
 				status: 400,
-				headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+				headers: { ...Object.fromEntries(corsHeaders), 'Content-Type': 'application/json' },
 			});
 		}
 
@@ -83,14 +72,14 @@ export default {
 		if (!name || !email || !message) {
 			return new Response(JSON.stringify({ error: 'Missing name, email, or message' }), {
 				status: 400,
-				headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+				headers: { ...Object.fromEntries(corsHeaders), 'Content-Type': 'application/json' },
 			});
 		}
 
 		if (message.length > 5000) {
 			return new Response(JSON.stringify({ error: 'Message too long' }), {
 				status: 413,
-				headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+				headers: { ...Object.fromEntries(corsHeaders), 'Content-Type': 'application/json' },
 			});
 		}
 
@@ -126,23 +115,20 @@ export default {
 				console.error('Resend API error:', resp.status, txt);
 				return new Response(JSON.stringify({ error: 'Failed to send message' }), {
 					status: 500,
-					headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+					headers: { ...Object.fromEntries(corsHeaders), 'Content-Type': 'application/json' },
 				});
 			}
 
-			const json = await resp.json();
-			console.log('Resend send result:', json);
-
 			return new Response(JSON.stringify({ success: true }), {
 				status: 200,
-				headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+				headers: { ...Object.fromEntries(corsHeaders), 'Content-Type': 'application/json' },
 			});
 
 		} catch (err) {
 			console.error('Resend fetch error:', err);
 			return new Response(JSON.stringify({ error: 'Internal Error' }), {
 				status: 500,
-				headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+				headers: { ...Object.fromEntries(corsHeaders), 'Content-Type': 'application/json' },
 			});
 		}
 	},
